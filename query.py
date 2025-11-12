@@ -45,6 +45,34 @@ def _normalise_tokens(text: str) -> List[str]:
     return [token for token in tokens if token not in _STOPWORDS]
 
 
+def _format_figure_list(metadata: Dict) -> List[str]:
+    figures = metadata.get("figure_identifiers") or metadata.get("figure_identifier") or []
+    if isinstance(figures, str):
+        figures = [figures]
+    return [fig for fig in figures if fig]
+
+
+def _format_citation(metadata: Dict, fallback_page_index: int) -> str:
+    page_number = metadata.get("page_number") or (fallback_page_index + 1)
+    section_title = metadata.get("section_title") or f"Page {page_number}"
+    figures = _format_figure_list(metadata)
+    if not figures:
+        return f"Page {page_number}, Section \"{section_title}\""
+    if len(figures) == 1:
+        return f"Page {page_number}, Section \"{section_title}\", {figures[0]}"
+    joined = ", ".join(figures)
+    return f"Page {page_number}, Section \"{section_title}\", Figures {joined}"
+
+
+def _format_context_header(chunk: TextChunk) -> str:
+    metadata = chunk.metadata or {}
+    page_number = metadata.get("page_number") or (chunk.page_index + 1)
+    section_title = metadata.get("section_title") or f"Page {page_number}"
+    figures = _format_figure_list(metadata)
+    figures_display = ", ".join(figures) if figures else "None"
+    return f"Page {page_number} | Section: {section_title} | Figures: {figures_display}"
+
+
 class TextQueryEngine:
     """Simple keyword-based query engine over chunked document text."""
 
@@ -107,7 +135,7 @@ class TextQueryEngine:
     ) -> Dict:
         matches = self.retrieve(question, top_k=top_k)
         context_blocks = [
-            f"[Page {match.chunk.page_index + 1}] {match.chunk.text}"
+            f"[{_format_context_header(match.chunk)}] {match.chunk.text}"
             for match in matches
         ]
         context_text = "\n\n".join(context_blocks)
@@ -116,12 +144,17 @@ class TextQueryEngine:
             prompt = (
                 "You are an assistant that answers questions about financial reports. "
                 "Use the provided context to answer the question.\n\n"
+                "When answering, cite the relevant context using the format "
+                "'Page X, Section \"Section Title\"' and include figure numbers when "
+                "available (e.g. 'Page 5, Section \"Overview\", Figure 2'). "
+                "List all citations at the end under 'Sources:'.\n\n"
                 f"Context:\n{context_text}\n\nQuestion: {question}\nAnswer:"
             )
         else:
             prompt = (
                 "You are an assistant that answers questions about financial reports. "
                 "There was no relevant context retrieved, so rely on general reasoning.\n\n"
+                "If you make claims, state that no document sources were found.\n\n"
                 f"Question: {question}\nAnswer:"
             )
 
@@ -131,10 +164,19 @@ class TextQueryEngine:
             extra_payload=llm_options,
         )
 
+        unique_citations: List[str] = []
+        seen: set[str] = set()
+        for match in matches:
+            citation = _format_citation(match.chunk.metadata or {}, match.chunk.page_index)
+            if citation not in seen:
+                seen.add(citation)
+                unique_citations.append(citation)
+
         return {
             "prompt": prompt,
             "response": response,
             "matches": [match.to_dict() for match in matches],
+            "sources": unique_citations,
         }
 
 
