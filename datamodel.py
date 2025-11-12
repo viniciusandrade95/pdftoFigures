@@ -60,6 +60,47 @@ class ParsedPage:
     elements: List[ParsedElement] = field(default_factory=list)
     tables: List[ParsedTable] = field(default_factory=list)
     llm_responses: List[Dict[str, Any]] = field(default_factory=list)
+    text_chunks: List["TextChunk"] = field(default_factory=list)
 
     def all_text(self) -> str:
         return " ".join(el.text for el in self.elements if el.text)
+
+
+@dataclass
+class TextChunk:
+    """Chunk of parsed text associated with a page in the source document."""
+
+    page_index: int
+    chunk_index: int
+    text: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "page_index": self.page_index,
+            "chunk_index": self.chunk_index,
+            "text": self.text,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Dict[str, Any]) -> "TextChunk":
+        return cls(
+            page_index=payload.get("page_index", 0),
+            chunk_index=payload.get("chunk_index", 0),
+            text=payload.get("text", ""),
+            metadata=dict(payload.get("metadata", {})),
+        )
+
+
+@dataclass
+class ChunkMatch:
+    """Result of matching a chunk to a query, including its relevance score."""
+
+    chunk: TextChunk
+    score: float
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = self.chunk.to_dict()
+        payload["score"] = self.score
+        return payload
