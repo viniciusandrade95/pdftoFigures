@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict
+from typing import Any, Dict, List, Optional
 
 @dataclass
 class ReaderConfig:
@@ -59,6 +59,7 @@ class ParsedPage:
     height: float
     elements: List[ParsedElement] = field(default_factory=list)
     tables: List[ParsedTable] = field(default_factory=list)
+    llm_responses: List[Dict[str, Any]] = field(default_factory=list)
 
     def all_text(self) -> str:
         return " ".join(el.text for el in self.elements if el.text)
